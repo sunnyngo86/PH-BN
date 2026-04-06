@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>套利雷达 | CEX 实时价差监控</title>
+<style>
+:root{--bg:#0a0c0f;--bg2:#0f1217;--bg3:#161b22;--bg4:#1e2530;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--text:#e8eaf0;--muted:#5a6478;--muted2:#8892a4;--green:#00d97e;--green-dim:rgba(0,217,126,0.12);--red:#ff4f6d;--red-dim:rgba(255,79,109,0.12);--yellow:#f5b700;--yellow-dim:rgba(245,183,0,0.1);--blue:#3b82f6;--font-mono:'JetBrains Mono',monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--font-mono);font-size:13px;min-height:100vh}
+header{border-bottom:1px solid var(--border);padding:0 24px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;background:rgba(10,12,15,0.97);backdrop-filter:blur(12px);z-index:200}
+.logo{font-size:17px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
+.logo-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.header-right{display:flex;align-items:center;gap:10px}
+.conn-badge{display:flex;align-items:center;gap:6px;font-size:11px;padding:4px 10px;border-radius:20px;transition:all .3s}
+.conn-badge.connecting{color:var(--yellow);background:var(--yellow-dim);border:1px solid rgba(245,183,0,.2)}
+.conn-badge.connected{color:var(--green);background:var(--green-dim);border:1px solid rgba(0,217,126,.2)}
+.conn-badge.error{color:var(--red);background:var(--red-dim);border:1px solid rgba(255,79,109,.2)}
+.conn-dot{width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
+.wl-btn{display:flex;align-items:center;gap:6px;font-size:12px;padding:5px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--bg3);color:var(--muted2);cursor:pointer;font-family:var(--font-mono);transition:all .15s}
+.wl-btn:hover{color:var(--text);border-color:var(--green);background:var(--green-dim)}
+.wl-active-count{font-size:10px;background:var(--green);color:#000;border-radius:10px;padding:1px 6px;font-weight:700}
+
+/* Setup banner */
+.setup-banner{background:var(--bg2);border:1px solid rgba(245,183,0,.3);border-radius:12px;padding:20px 24px;margin:20px 22px 0;display:flex;flex-direction:column;gap:14px}
+.setup-banner.hidden{display:none}
+.setup-title{font-size:14px;font-weight:700;color:var(--yellow);display:flex;align-items:center;gap:8px}
+.setup-desc{font-size:12px;color:var(--muted2);line-height:1.8}
+.setup-desc code{background:var(--bg3);border:1px solid var(--border2);padding:2px 7px;border-radius:4px;color:var(--text);font-size:11px}
+.proxy-row{display:flex;gap:8px;align-items:center}
+.proxy-input{flex:1;background:var(--bg3);border:1px solid var(--border2);color:var(--text);padding:8px 12px;border-radius:8px;font-family:var(--font-mono);font-size:12px;outline:none}
+.proxy-input:focus{border-color:var(--green)}
+.proxy-input::placeholder{color:var(--muted)}
+.proxy-save{background:var(--green);color:#000;border:none;border-radius:8px;padding:8px 18px;font-family:var(--font-mono);font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap}
+.proxy-save:hover{opacity:.85}
+.setup-steps{display:flex;flex-direction:column;gap:6px}
+.step{display:flex;gap:10px;font-size:12px;color:var(--muted2);line-height:1.6}
+.step-num{width:20px;height:20px;border-radius:50%;background:var(--bg4);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--muted);flex-shrink:0;margin-top:1px}
+
+/* Drawer */
+.wl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;opacity:0;pointer-events:none;transition:opacity .2s}
+.wl-overlay.open{opacity:1;pointer-events:all}
+.wl-drawer{position:fixed;top:0;right:0;bottom:0;width:340px;background:var(--bg2);border-left:1px solid var(--border2);z-index:301;transform:translateX(100%);transition:transform .25s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column}
+.wl-drawer.open{transform:translateX(0)}
+.wl-head{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.wl-title{font-size:15px;font-weight:700}
+.wl-close{background:none;border:1px solid var(--border);color:var(--muted2);width:26px;height:26px;border-radius:6px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center}
+.wl-close:hover{color:var(--text)}
+.wl-body{padding:14px 18px;overflow-y:auto;flex:1}
+.wl-sec{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:10px}
+.wl-ex-card{background:var(--bg3);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:10px;transition:border-color .15s}
+.wl-ex-card.enabled{border-color:rgba(0,217,126,.3)}
+.wl-ex-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.wl-ex-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.wl-ex-name{font-size:13px;font-weight:700;flex:1}
+.toggle{position:relative;width:34px;height:18px;cursor:pointer}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.toggle-sl{position:absolute;inset:0;background:var(--bg4);border-radius:20px;transition:.2s;border:1px solid var(--border2)}
+.toggle-sl::before{content:'';position:absolute;width:12px;height:12px;left:2px;top:2px;background:var(--muted);border-radius:50%;transition:.2s}
+.toggle input:checked+.toggle-sl{background:var(--green-dim);border-color:var(--green)}
+.toggle input:checked+.toggle-sl::before{transform:translateX(16px);background:var(--green)}
+.wl-note{font-size:10px;color:var(--muted);line-height:1.6;padding:5px 7px;background:var(--bg4);border-radius:5px}
+.wl-foot{padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px}
+.wl-apply{flex:1;background:var(--green);color:#000;border:none;border-radius:8px;padding:9px;font-family:var(--font-mono);font-size:13px;font-weight:700;cursor:pointer}
+.wl-apply:hover{opacity:.85}
+.wl-reset{background:var(--bg3);color:var(--muted2);border:1px solid var(--border);border-radius:8px;padding:9px 14px;font-family:var(--font-mono);font-size:12px;cursor:pointer}
+.wl-reset:hover{color:var(--text)}
+
+/* Ticker */
+.ticker-wrap{background:var(--bg3);border-bottom:1px solid var(--border);overflow:hidden;height:30px;display:flex;align-items:center}
+.ticker-inner{display:flex;white-space:nowrap}
+.ticker-inner.go{animation:scroll 60s linear infinite}
+@keyframes scroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.ticker-item{display:inline-flex;align-items:center;gap:8px;padding:0 18px;font-size:11px;border-right:1px solid var(--border)}
+
+.main{max-width:1600px;margin:0 auto;padding:18px 22px}
+.stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat-card.g::before{background:var(--green)}.stat-card.y::before{background:var(--yellow)}.stat-card.b::before{background:var(--blue)}.stat-card.m::before{background:var(--muted)}
+.stat-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
+.stat-value{font-size:20px;font-weight:700}
+.stat-sub{font-size:10px;color:var(--muted2);margin-top:3px}
+
+.section-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.section-title{font-size:13px;font-weight:700}
+.section-count{font-size:11px;color:var(--muted);background:var(--bg3);border:1px solid var(--border);padding:2px 8px;border-radius:10px}
+.hot-bar{display:flex;gap:7px;margin-bottom:14px;overflow-x:auto;padding-bottom:3px}
+.hot-bar::-webkit-scrollbar{height:3px}.hot-bar::-webkit-scrollbar-thumb{background:var(--border2)}
+.alert-pill{flex-shrink:0;display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;transition:border-color .15s}
+.alert-pill:hover{border-color:var(--border2)}.alert-pill.hot{border-color:rgba(0,217,126,.3);background:var(--green-dim)}
+.alert-pair{font-weight:700}.alert-spread{color:var(--green);font-weight:700}
+.alert-exes{font-size:10px;color:var(--muted2);margin-top:1px}
+
+.controls{display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap}
+.filter-group{display:flex;gap:3px}
+.fbtn{background:var(--bg2);border:1px solid var(--border);color:var(--muted2);padding:5px 12px;border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-size:12px;transition:all .15s}
+.fbtn:hover{border-color:var(--border2);color:var(--text)}.fbtn.active{background:var(--green-dim);border-color:rgba(0,217,126,.3);color:var(--green)}
+.search-box{background:var(--bg2);border:1px solid var(--border);color:var(--text);padding:5px 12px;border-radius:6px;font-family:var(--font-mono);font-size:12px;width:160px;outline:none}
+.search-box:focus{border-color:rgba(0,217,126,.4)}.search-box::placeholder{color:var(--muted)}
+.fsel{background:var(--bg2);border:1px solid var(--border);color:var(--muted2);padding:5px 10px;border-radius:6px;font-family:var(--font-mono);font-size:12px;outline:none;cursor:pointer}
+.ml-auto{margin-left:auto;font-size:11px;color:var(--muted)}
+
+.table-wrapper{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+th{padding:9px 12px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);border-bottom:1px solid var(--border);background:var(--bg3);white-space:nowrap}
+tbody tr{border-bottom:1px solid rgba(255,255,255,0.04);transition:background .1s}
+tbody tr:hover{background:rgba(255,255,255,0.025)}
+tbody tr:last-child{border-bottom:none}
+td{padding:9px 12px;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-top td{border-bottom:none!important;padding-bottom:3px}
+.row-bot td{border-bottom:1px solid rgba(255,255,255,0.06)!important;padding-top:3px}
+.pair-name{font-weight:700;font-size:13px}
+.exbadge{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:4px;border:1px solid var(--border);background:var(--bg3)}
+.edot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.pv-long{color:#00c9a7;font-weight:700;font-size:13px}
+.pv-short{color:var(--red);font-weight:700;font-size:13px}
+.sbadge{display:inline-block;font-size:12px;font-weight:700;padding:3px 9px;border-radius:5px}
+.sh{background:var(--green-dim);color:var(--green);border:1px solid rgba(0,217,126,.25)}
+.sm{background:var(--yellow-dim);color:var(--yellow);border:1px solid rgba(245,183,0,.25)}
+.sl{background:var(--bg3);color:var(--muted2);border:1px solid var(--border)}
+.sn{background:var(--red-dim);color:var(--red);border:1px solid rgba(255,79,109,.25)}
+.fr-pos{font-size:11px;font-weight:700;color:var(--red)}
+.fr-neg{font-size:11px;font-weight:700;color:var(--green)}
+.fr-zero{font-size:11px;color:var(--muted)}
+.frd-neg{font-size:11px;font-weight:700;color:#00c9a7}
+.frd-pos{font-size:11px;font-weight:700;color:var(--red)}
+.frd-zero{font-size:11px;color:var(--muted)}
+.vv{font-size:12px;color:var(--muted2)}
+.pmini{display:flex;gap:4px;flex-wrap:wrap}
+.pmi{font-size:10px;padding:2px 5px;border-radius:3px;background:var(--bg3);border:1px solid var(--border);color:var(--muted2)}
+.pmi.bb{border-color:rgba(0,217,126,.3);color:var(--green)}.pmi.bs{border-color:rgba(255,79,109,.3);color:var(--red)}
+@keyframes fg{0%{background:rgba(0,217,126,.15)}100%{background:transparent}}
+@keyframes fr2{0%{background:rgba(255,79,109,.15)}100%{background:transparent}}
+tr.fu{animation:fg .8s ease-out}tr.fd{animation:fr2 .8s ease-out}
+.loading-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:50px 20px;gap:14px;color:var(--muted)}
+.spinner{width:28px;height:28px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+footer{border-top:1px solid var(--border);padding:14px 22px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:20px}
+</style>
+</head>
+<body>
+
+<div class="wl-overlay" id="wlOverlay" onclick="closeWL()"></div>
+<div class="wl-drawer" id="wlDrawer">
+  <div class="wl-head">
+    <div class="wl-title">交易所设置</div>
+    <button class="wl-close" onclick="closeWL()">✕</button>
+  </div>
+  <div class="wl-body" id="wlBody"></div>
+  <div class="wl-foot">
+    <button class="wl-reset" onclick="resetWL()">全部重置</button>
+    <button class="wl-apply" onclick="applyWL()">应用 ▶</button>
+  </div>
+</div>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>套利雷达</div>
+  <div class="header-right">
+    <button class="wl-btn" onclick="openWL()">⚙ 交易所 <span class="wl-active-count" id="wlCount">5</span></button>
+    <div class="conn-badge connecting" id="connBadge"><div class="conn-dot"></div><span id="connTxt">初始化...</span></div>
+  </div>
+</header>
+
+<!-- Setup banner — 未配置 proxy 时显示 -->
+<div class="setup-banner" id="setupBanner">
+  <div class="setup-title">⚡ 配置 Cloudflare Worker 代理</div>
+  <div class="setup-desc">
+    将 Worker 部署后，把你的 Worker URL 填入下方。数据将通过 Cloudflare 边缘节点转发，
+    使用<strong>你访问时的 IP 路由</strong>，绕过 IP 封锁与 CORS 限制。
+  </div>
+  <div class="setup-steps">
+    <div class="step"><div class="step-num">1</div><div>登录 <code>dash.cloudflare.com</code> → Workers & Pages → Create Worker</div></div>
+    <div class="step"><div class="step-num">2</div><div>将 <code>worker.js</code> 内容粘贴进编辑器，点击 Deploy</div></div>
+    <div class="step"><div class="step-num">3</div><div>复制 Worker URL（格式：<code>https://xxx.your-name.workers.dev</code>）</div></div>
+    <div class="step"><div class="step-num">4</div><div>粘贴到下方输入框，点击保存即可开始监控</div></div>
+  </div>
+  <div class="proxy-row">
+    <input type="text" class="proxy-input" id="proxyInput"
+      placeholder="https://your-worker.your-name.workers.dev"
+      value="">
+    <button class="proxy-save" onclick="saveProxy()">保存并连接</button>
+  </div>
+</div>
+
+<div class="ticker-wrap"><div class="ticker-inner" id="ticker">配置 Cloudflare Worker 后开始推送行情...</div></div>
+
+<div class="main">
+  <div class="stats-bar">
+    <div class="stat-card g"><div class="stat-label">监控交易对</div><div class="stat-value" style="color:var(--green)" id="sPairs">—</div><div class="stat-sub" id="sExSub">—</div></div>
+    <div class="stat-card g"><div class="stat-label">套利机会 &gt;0.5%</div><div class="stat-value" style="color:var(--green)" id="sOpps">—</div><div class="stat-sub">价差超过阈值</div></div>
+    <div class="stat-card y"><div class="stat-label">最大价差</div><div class="stat-value" style="color:var(--yellow)" id="sMax">—</div><div class="stat-sub" id="sMaxPair">—</div></div>
+    <div class="stat-card m"><div class="stat-label">上次更新</div><div class="stat-value" style="font-size:14px;color:var(--muted2)" id="sUpdated">—</div><div class="stat-sub">轮询间隔 8s</div></div>
+  </div>
+
+  <div class="section-header"><div class="section-title">🔥 热门套利机会</div><div class="section-count" id="hotCount">—</div></div>
+  <div class="hot-bar" id="hotBar"><div style="color:var(--muted);font-size:12px;padding:6px">等待数据...</div></div>
+
+  <div class="controls">
+    <input type="text" class="search-box" placeholder="搜索 symbol..." id="searchQ" oninput="renderTable()">
+    <div class="filter-group">
+      <button class="fbtn active" onclick="setF(0,this)">全部</button>
+      <button class="fbtn" onclick="setF(0.3,this)">&gt;0.3%</button>
+      <button class="fbtn" onclick="setF(0.5,this)">&gt;0.5%</button>
+      <button class="fbtn" onclick="setF(1,this)">&gt;1%</button>
+      <button class="fbtn" onclick="setF(2,this)">&gt;2%</button>
+    </div>
+    <select class="fsel" id="exFilter" onchange="renderTable()"><option value="">全部交易所</option></select>
+    <select class="fsel" id="sortSel" onchange="renderTable()">
+      <option value="spread">按价差排序</option>
+      <option value="frdiff">按资费差排序</option>
+      <option value="pair">按名称排序</option>
+    </select>
+    <div class="ml-auto">显示 <span id="visCnt">0</span> / <span id="totCnt">0</span></div>
+  </div>
+
+  <div class="section-header"><div class="section-title">实时价差数据</div></div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:32px" rowspan="2">#</th>
+          <th style="width:70px" rowspan="2">Symbol</th>
+          <th style="width:72px;text-align:right" rowspan="2">资费差</th>
+          <th style="width:78px;text-align:right" rowspan="2">价差</th>
+          <th style="width:80px">交易所</th>
+          <th style="width:100px;text-align:right;color:var(--red)">Short 价格</th>
+          <th style="width:70px;text-align:right">资金费率</th>
+          <th style="width:74px;text-align:right">24h 量</th>
+          <th style="width:160px" rowspan="2">各所对比</th>
+        </tr>
+        <tr>
+          <th style="width:80px">交易所</th>
+          <th style="width:100px;text-align:right;color:#00c9a7">Long 价格</th>
+          <th style="width:70px;text-align:right">资金费率</th>
+          <th style="width:74px;text-align:right">24h 量</th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="9"><div class="loading-overlay"><div style="color:var(--muted);font-size:12px">请先配置 Cloudflare Worker 代理 ↑</div></div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<footer>
+  <div>套利雷达 · Cloudflare Worker 版</div>
+  <div style="max-width:580px;line-height:1.6">⚠ 数据来自各所公开 API，仅供参考。实际套利需考虑手续费、滑点与转账风险。</div>
+</footer>
+
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+// 从 localStorage 读取已保存的 proxy URL
+let PROXY_BASE = 'https://fancy-mode-6b13.ngohauchin.workers.dev';
+
+const EX_DEFS = [
+  { id:'binance', name:'Binance', color:'#f0b90b',
+    urls:['https://fapi.binance.com/fapi/v1/ticker/24hr',
+          'https://fapi.binance.com/fapi/v1/premiumIndex'],
+    parse: parseBinance },
+  { id:'bybit',   name:'Bybit',  color:'#f7a600',
+    urls:['https://api.bybit.com/v5/market/tickers?category=linear'],
+    parse: parseBybit },
+  { id:'bitget',  name:'Bitget', color:'#00c8ff',
+    urls:['https://api.bitget.com/api/v2/mix/market/tickers?productType=USDT-FUTURES'],
+    parse: parseBitget },
+  { id:'okx',     name:'OKX',   color:'#a0a0a0',
+    urls:['https://www.okx.com/api/v5/market/tickers?instType=SWAP'],
+    parse: parseOKX },
+  { id:'phemex',  name:'Phemex',color:'#5a67ff',
+    urls:['https://api.phemex.com/md/v2/ticker/24hr/all'],
+    parse: parsePhemex },
+];
+
+const MIN_VOL = 500000, PHEMEX_MIN_VOL = 10000, POLL_MS = 8000;
+const PHEMEX_SKIP = new Set(['SP500','NAS100','GER40','UK100','HK50','AUS200','US2000','NK225','FTSE100','CAC40','SMI','IBEX35','DJI','SENSEX','NIFTY50','SPYX','TW88','EWJ','EWY','HSCHKD','CRCL','AAPL','GOOGL','NVDA','META','AMZN','TSLA','COIN','HOOD','INTC','UNH','MSTR','MSFT','BABA','ORCL','PLTR','XTI','XBR','COPPER','NATGAS','WHEAT','CORN','SOYBEAN','XAU','XAG','XPT','XPD','VIX','MOVE','INX']);
+
+let activeEx = new Set(EX_DEFS.map(e => e.id));
+let pendingEx = new Set(EX_DEFS.map(e => e.id));
+let allRows = [], prevSpread = {}, spreadFilter = 0;
+let pollTimer = null;
+const KILO_BASES = new Set();
+
+// ─── Proxy fetch ─────────────────────────────────────────────────────────────
+// 所有请求都通过 Cloudflare Worker 代理，走用户本机 IP 出去
+async function pFetch(url) {
+  if (!PROXY_BASE) return null;
+  const proxyUrl = `${PROXY_BASE}/proxy?url=${encodeURIComponent(url)}`;
+  try {
+    const res = await fetch(proxyUrl);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch(e) {
+    console.warn('[proxy]', url.slice(0,60), e.message);
+    return null;
+  }
+}
+
+// ─── Parsers ─────────────────────────────────────────────────────────────────
+async function parseBinance(ex) {
+  const [tk, pm] = await Promise.all([pFetch(ex.urls[0]), pFetch(ex.urls[1])]);
+  if (!tk) return {};
+  const frMap = {};
+  if (Array.isArray(pm)) pm.forEach(p => { frMap[p.symbol] = parseFloat(p.lastFundingRate)||0; });
+  const out = {};
+  for (const d of tk) {
+    if (!d.symbol.endsWith('USDT')) continue;
+    const raw = d.symbol.slice(0,-4);
+    const price = parseFloat(d.lastPrice), vol = parseFloat(d.quoteVolume);
+    if (!price || vol < MIN_VOL) continue;
+    if (raw.startsWith('1000')) KILO_BASES.add(raw.slice(4));
+    out[raw] = { price, volume:vol, fundingRate: frMap[d.symbol]||0 };
+  }
+  return out;
+}
+async function parseBybit(ex) {
+  const data = await pFetch(ex.urls[0]);
+  if (!data?.result?.list) return {};
+  const out = {};
+  for (const d of data.result.list) {
+    if (!d.symbol.endsWith('USDT')) continue;
+    const raw = d.symbol.slice(0,-4);
+    const price = parseFloat(d.lastPrice), vol = parseFloat(d.turnover24h);
+    if (!price || vol < MIN_VOL) continue;
+    out[raw] = { price, volume:vol, fundingRate: parseFloat(d.fundingRate)||0 };
+  }
+  return out;
+}
+async function parseBitget(ex) {
+  const data = await pFetch(ex.urls[0]);
+  if (!data?.data) return {};
+  const out = {};
+  for (const d of data.data) {
+    if (!d.symbol.endsWith('USDT')) continue;
+    const raw = d.symbol.slice(0,-4);
+    const price = parseFloat(d.lastPr), vol = parseFloat(d.usdtVolume);
+    if (!price || vol < MIN_VOL) continue;
+    out[raw] = { price, volume:vol, fundingRate: parseFloat(d.fundingRate)||0 };
+  }
+  return out;
+}
+async function parseOKX(ex) {
+  const data = await pFetch(ex.urls[0]);
+  if (!data?.data) return {};
+  const out = {};
+  for (const d of data.data) {
+    if (!d.instId.endsWith('-USDT-SWAP')) continue;
+    const raw0 = d.instId.replace('-USDT-SWAP','');
+    const raw = KILO_BASES.has(raw0) ? '1000'+raw0 : raw0;
+    const price = parseFloat(d.last), vol = parseFloat(d.volCcy24h);
+    if (!price || vol < MIN_VOL) continue;
+    out[raw] = { price, volume:vol, fundingRate: parseFloat(d.fundingRate)||0 };
+  }
+  return out;
+}
+async function parsePhemex(ex) {
+  const data = await pFetch(ex.urls[0]);
+  if (!data?.result) return {};
+  const out = {};
+  for (const d of data.result) {
+    if (!d.symbol?.endsWith('USDT')) continue;
+    const raw = d.symbol.slice(0,-4);
+    if (/^[um][A-Z]/.test(raw) || PHEMEX_SKIP.has(raw)) continue;
+    const price = parseFloat(d.closeRp), vol = parseFloat(d.turnoverRv);
+    if (!price || vol < PHEMEX_MIN_VOL) continue;
+    out[raw] = { price, volume:vol, fundingRate: parseFloat(d.fundingRateRr)||0 };
+  }
+  return out;
+}
+
+// ─── Proxy setup ─────────────────────────────────────────────────────────────
+function saveProxy() {
+  const val = document.getElementById('proxyInput').value.trim().replace(/\/$/, '');
+  if (!val.startsWith('http')) { alert('请输入有效的 Worker URL（以 https:// 开头）'); return; }
+  PROXY_BASE = val;
+  document.getElementById('setupBanner').classList.add('hidden');
+  startPolling();
+}
+
+function checkProxy() {
+  if (PROXY_BASE) {
+    document.getElementById('proxyInput').value = PROXY_BASE;
+    document.getElementById('setupBanner').classList.add('hidden');
+    startPolling();
+  }
+}
+
+// ─── Poll ─────────────────────────────────────────────────────────────────────
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  poll();
+  pollTimer = setInterval(poll, POLL_MS);
+}
+
+async function poll() {
+  if (!PROXY_BASE) return;
+  setConn('connecting','拉取中...');
+  const enabled = EX_DEFS.filter(e => activeEx.has(e.id));
+  const results = await Promise.all(enabled.map(e => e.parse(e)));
+
+  const priceMap = {};
+  enabled.forEach((e,i) => { priceMap[e.id] = results[i] || {}; });
+
+  const allBases = new Set();
+  enabled.forEach(e => Object.keys(priceMap[e.id]).forEach(b => allBases.add(b)));
+
+  if (allBases.size === 0) { setConn('error','无数据，检查 Worker URL'); return; }
+
+  prevSpread = {};
+  allRows.forEach(r => { prevSpread[r.base] = r.spreadPct; });
+
+  const rows = [];
+  for (const base of allBases) {
+    const entries = [];
+    for (const e of enabled) {
+      const d = priceMap[e.id][base];
+      if (d && d.price > 0) entries.push({ ex:e, price:d.price, volume:d.volume||0, fundingRate:d.fundingRate||0 });
+    }
+    if (entries.length < 2) continue;
+    entries.sort((a,b) => a.price - b.price);
+    const buy = entries[0], sell = entries[entries.length-1];
+    rows.push({
+      base, pair:base+'/USDT',
+      buyEx:buy.ex, buyPrice:buy.price, buyVol:buy.volume, buyFR:buy.fundingRate,
+      sellEx:sell.ex, sellPrice:sell.price, sellVol:sell.volume, sellFR:sell.fundingRate,
+      spreadPct: parseFloat(((sell.price-buy.price)/buy.price*100).toFixed(4)),
+      allPrices: entries.map(e=>({ id:e.ex.id, name:e.ex.name, color:e.ex.color, price:e.price })),
+    });
+  }
+  rows.sort((a,b) => b.spreadPct - a.spreadPct);
+  allRows = rows;
+
+  const opps = rows.filter(r => r.spreadPct > 0.5).length;
+  const maxR = rows[0];
+  setText('sPairs', rows.length);
+  setText('sOpps', opps);
+  setText('sMax', maxR ? (maxR.spreadPct>=0?'+':'')+maxR.spreadPct.toFixed(2)+'%' : '—');
+  setText('sMaxPair', maxR ? maxR.pair : '—');
+  const now = new Date();
+  setText('sUpdated', pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds()));
+  setText('sExSub', enabled.length + ' 个交易所');
+
+  updateExFilter(enabled);
+  renderTable();
+  renderHot();
+  renderTicker(rows);
+  setConn('connected','实时连接');
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function getFiltered() {
+  const q = document.getElementById('searchQ').value.toLowerCase();
+  const exF = document.getElementById('exFilter').value;
+  const srt = document.getElementById('sortSel').value;
+  let data = allRows.filter(r => {
+    if (r.spreadPct < spreadFilter) return false;
+    if (q && !r.base.toLowerCase().includes(q)) return false;
+    if (exF && r.buyEx.name !== exF && r.sellEx.name !== exF) return false;
+    return true;
+  });
+  if (srt==='spread') data.sort((a,b)=>b.spreadPct-a.spreadPct);
+  else if (srt==='frdiff') data.sort((a,b)=>(a.buyFR-a.sellFR)-(b.buyFR-b.sellFR));
+  else data.sort((a,b)=>a.base.localeCompare(b.base));
+  return data;
+}
+
+function renderTable() {
+  const data = getFiltered();
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  if (!data.length && allRows.length===0) {
+    tbody.innerHTML = `<tr><td colspan="9"><div class="loading-overlay"><div class="spinner"></div><div>拉取数据中...</div></div></td></tr>`;
+    return;
+  }
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:36px;color:var(--muted)">无符合条件的交易对</td></tr>`;
+    return;
+  }
+  data.forEach((r,i) => {
+    const prev = prevSpread[r.base];
+    const flash = prev!==undefined?(r.spreadPct>prev?'fu':'fd'):'';
+    const sc = r.spreadPct>=1.5?'sh':r.spreadPct>=0.5?'sm':r.spreadPct>=0?'sl':'sn';
+    const allP = r.allPrices.map(p =>
+      `<span class="pmi ${p.name===r.sellEx.name?'bs':p.name===r.buyEx.name?'bb':''}">` +
+      `<span style="background:${p.color};width:5px;height:5px;border-radius:50%;display:inline-block;margin-right:3px;vertical-align:middle"></span>` +
+      `${p.name} ${fmtP(p.price)}</span>`).join('');
+    const tr1 = document.createElement('tr');
+    tr1.className = 'row-top'+(flash?' '+flash:'');
+    tr1.innerHTML =
+      `<td rowspan="2" style="vertical-align:middle"><span style="color:var(--muted);font-size:11px">${i+1}</span></td>`+
+      `<td rowspan="2" style="vertical-align:middle"><div class="pair-name">${r.base}</div></td>`+
+      `<td rowspan="2" style="text-align:right;vertical-align:middle">${fmtFRDiff(r.buyFR,r.sellFR)}</td>`+
+      `<td rowspan="2" style="text-align:right;vertical-align:middle"><span class="sbadge ${sc}">${r.spreadPct>=0?'+':''}${r.spreadPct.toFixed(2)}%</span></td>`+
+      `<td><span class="exbadge"><span class="edot" style="background:${r.sellEx.color}"></span>${r.sellEx.name}</span></td>`+
+      `<td style="text-align:right"><div class="pv-short">${fmtP(r.sellPrice)}</div></td>`+
+      `<td style="text-align:right">${fmtFR(r.sellFR)}</td>`+
+      `<td style="text-align:right"><div class="vv">${fmtV(r.sellVol)}</div></td>`+
+      `<td rowspan="2" style="vertical-align:middle"><div class="pmini">${allP}</div></td>`;
+    tbody.appendChild(tr1);
+    const tr2 = document.createElement('tr');
+    tr2.className = 'row-bot';
+    tr2.innerHTML =
+      `<td><span class="exbadge"><span class="edot" style="background:${r.buyEx.color}"></span>${r.buyEx.name}</span></td>`+
+      `<td style="text-align:right"><div class="pv-long">${fmtP(r.buyPrice)}</div></td>`+
+      `<td style="text-align:right">${fmtFR(r.buyFR)}</td>`+
+      `<td style="text-align:right"><div class="vv">${fmtV(r.buyVol)}</div></td>`;
+    tbody.appendChild(tr2);
+  });
+  setText('visCnt', data.length);
+  setText('totCnt', allRows.length);
+}
+
+function renderHot() {
+  const hot = [...allRows].slice(0,10);
+  const bar = document.getElementById('hotBar');
+  bar.innerHTML = '';
+  hot.forEach((d,i) => {
+    const p = document.createElement('div');
+    p.className = 'alert-pill'+(i<3?' hot':'');
+    p.innerHTML = `<div><div style="display:flex;gap:8px;align-items:center"><span class="alert-pair">${d.base}/USDT</span><span class="alert-spread">${d.spreadPct>=0?'+':''}${d.spreadPct.toFixed(2)}%</span></div><div class="alert-exes">${d.buyEx.name} → ${d.sellEx.name}</div></div>`;
+    p.onclick = () => { document.getElementById('searchQ').value = d.base; renderTable(); };
+    bar.appendChild(p);
+  });
+  setText('hotCount', hot.length+' 个');
+}
+
+function renderTicker(rows) {
+  const items = rows.slice(0,24);
+  if (!items.length) return;
+  const html = items.map(d =>
+    `<span class="ticker-item"><span style="color:var(--muted2);font-weight:700">${d.base}/USDT</span>`+
+    `<span style="color:${d.spreadPct>0?'var(--green)':'var(--red)'};font-weight:700">${d.spreadPct>=0?'+':''}${d.spreadPct.toFixed(2)}%</span>`+
+    `<span style="color:var(--muted);font-size:10px">${d.buyEx.name}→${d.sellEx.name}</span></span>`
+  ).join('');
+  const el = document.getElementById('ticker');
+  el.innerHTML = html+html;
+  el.className = 'ticker-inner go';
+}
+
+// ─── Whitelist ────────────────────────────────────────────────────────────────
+function openWL() {
+  pendingEx = new Set(activeEx);
+  renderWLDrawer();
+  document.getElementById('wlOverlay').classList.add('open');
+  document.getElementById('wlDrawer').classList.add('open');
+}
+function closeWL() {
+  document.getElementById('wlOverlay').classList.remove('open');
+  document.getElementById('wlDrawer').classList.remove('open');
+}
+function renderWLDrawer() {
+  const body = document.getElementById('wlBody');
+  body.innerHTML = '<div class="wl-sec">选择参与监控的交易所</div>';
+  EX_DEFS.forEach(ex => {
+    const on = pendingEx.has(ex.id);
+    const card = document.createElement('div');
+    card.className = 'wl-ex-card'+(on?' enabled':'');
+    card.innerHTML =
+      `<div class="wl-ex-header"><span class="wl-ex-dot" style="background:${ex.color}"></span>`+
+      `<span class="wl-ex-name">${ex.name}</span>`+
+      `<label class="toggle"><input type="checkbox" ${on?'checked':''} onchange="toggleEx('${ex.id}',this.checked)"><span class="toggle-sl"></span></label></div>`+
+      `<div class="wl-note">永续合约 USDT 本位 · 经 Cloudflare Worker 代理</div>`;
+    body.appendChild(card);
+  });
+  // 代理地址修改入口
+  const editDiv = document.createElement('div');
+  editDiv.style.cssText = 'margin-top:16px;border-top:1px solid var(--border);padding-top:14px';
+  editDiv.innerHTML =
+    `<div class="wl-sec">Worker 代理地址</div>`+
+    `<div style="display:flex;gap:6px">`+
+    `<input type="text" class="proxy-input" id="wlProxyInput" value="${PROXY_BASE}" placeholder="https://xxx.workers.dev" style="flex:1;padding:6px 10px;font-size:11px">`+
+    `<button class="proxy-save" style="font-size:11px;padding:6px 10px" onclick="saveProxyFromWL()">更新</button></div>`;
+  body.appendChild(editDiv);
+}
+function toggleEx(id, on) { on ? pendingEx.add(id) : pendingEx.delete(id); renderWLDrawer(); }
+function resetWL() { pendingEx = new Set(EX_DEFS.map(e => e.id)); renderWLDrawer(); }
+function applyWL() {
+  if (pendingEx.size===0) { alert('至少选一个交易所'); return; }
+  activeEx = new Set(pendingEx);
+  setText('wlCount', activeEx.size);
+  updateExFilter(EX_DEFS.filter(e=>activeEx.has(e.id)));
+  closeWL();
+  if (PROXY_BASE) poll();
+}
+function saveProxyFromWL() {
+  const val = document.getElementById('wlProxyInput').value.trim().replace(/\/$/,'');
+  if (!val.startsWith('http')) { alert('请输入有效 URL'); return; }
+  PROXY_BASE = val;
+  localStorage.setItem('arb_proxy', val);
+  document.getElementById('setupBanner').classList.add('hidden');
+  closeWL();
+  startPolling();
+}
+function updateExFilter(enabled) {
+  const sel = document.getElementById('exFilter');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">全部交易所</option>';
+  enabled.forEach(e => {
+    const o = document.createElement('option');
+    o.value = e.name; o.textContent = e.name;
+    if (o.value===cur) o.selected=true;
+    sel.appendChild(o);
+  });
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function setConn(cls,txt) {
+  document.getElementById('connBadge').className='conn-badge '+cls;
+  setText('connTxt',txt);
+}
+function setText(id,v) { const e=document.getElementById(id); if(e) e.textContent=v; }
+function pad(n) { return String(n).padStart(2,'0'); }
+function setF(v,btn) {
+  spreadFilter=v;
+  document.querySelectorAll('.fbtn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  renderTable();
+}
+function fmtP(p) {
+  if (!p||isNaN(p)) return '—';
+  if (p>=1000) return '$'+p.toLocaleString('en',{maximumFractionDigits:2});
+  if (p>=1) return '$'+p.toFixed(4);
+  return '$'+p.toFixed(6);
+}
+function fmtV(v) {
+  if (!v||isNaN(v)) return '—';
+  if (v>=1e9) return '$'+(v/1e9).toFixed(2)+'B';
+  if (v>=1e6) return '$'+(v/1e6).toFixed(1)+'M';
+  if (v>=1e3) return '$'+(v/1e3).toFixed(0)+'K';
+  return '$'+v.toFixed(0);
+}
+function fmtFR(r) {
+  if (r===undefined||r===null||isNaN(r)) return '<span class="fr-zero">—</span>';
+  const pct=(r*100).toFixed(4);
+  if (r>0.00001) return `<span class="fr-pos">+${pct}%</span>`;
+  if (r<-0.00001) return `<span class="fr-neg">${pct}%</span>`;
+  return `<span class="fr-zero">${pct}%</span>`;
+}
+function fmtFRDiff(bFR,sFR) {
+  if (bFR===undefined||sFR===undefined) return '<span class="frd-zero">—</span>';
+  const d=bFR-sFR, pct=(d*100).toFixed(4);
+  if (d<-0.00001) return `<span class="frd-neg">${pct}%</span>`;
+  if (d>0.00001) return `<span class="frd-pos">+${pct}%</span>`;
+  return `<span class="frd-zero">${pct}%</span>`;
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+checkProxy();
+</script>
+</body>
+</html>
