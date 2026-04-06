@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sunny GoGoGo</title>
+<title>套利雷达 | CEX 实时价差监控</title>
 <style>
 :root{--bg:#0a0c0f;--bg2:#0f1217;--bg3:#161b22;--bg4:#1e2530;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--text:#e8eaf0;--muted:#5a6478;--muted2:#8892a4;--green:#00d97e;--green-dim:rgba(0,217,126,0.12);--red:#ff4f6d;--red-dim:rgba(255,79,109,0.12);--yellow:#f5b700;--yellow-dim:rgba(245,183,0,0.1);--blue:#3b82f6;--font-mono:'JetBrains Mono',monospace}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -564,15 +564,7 @@ function renderWLDrawer() {
       `<div class="wl-note">永续合约 USDT 本位 · 经 Cloudflare Worker 代理</div>`;
     body.appendChild(card);
   });
-  // 代理地址修改入口
-  const editDiv = document.createElement('div');
-  editDiv.style.cssText = 'margin-top:16px;border-top:1px solid var(--border);padding-top:14px';
-  editDiv.innerHTML =
-    `<div class="wl-sec">Worker 代理地址</div>`+
-    `<div style="display:flex;gap:6px">`+
-    `<input type="text" class="proxy-input" id="wlProxyInput" value="${PROXY_BASE}" placeholder="https://xxx.workers.dev" style="flex:1;padding:6px 10px;font-size:11px">`+
-    `<button class="proxy-save" style="font-size:11px;padding:6px 10px" onclick="saveProxyFromWL()">更新</button></div>`;
-  body.appendChild(editDiv);
+
 }
 function toggleEx(id, on) { on ? pendingEx.add(id) : pendingEx.delete(id); renderWLDrawer(); }
 function resetWL() { pendingEx = new Set(EX_DEFS.map(e => e.id)); renderWLDrawer(); }
@@ -584,15 +576,7 @@ function applyWL() {
   closeWL();
   if (PROXY_BASE) poll();
 }
-function saveProxyFromWL() {
-  const val = document.getElementById('wlProxyInput').value.trim().replace(/\/$/,'');
-  if (!val.startsWith('http')) { alert('请输入有效 URL'); return; }
-  PROXY_BASE = val;
-  localStorage.setItem('arb_proxy', val);
-  document.getElementById('setupBanner').classList.add('hidden');
-  closeWL();
-  startPolling();
-}
+
 function updateExFilter(enabled) {
   const sel = document.getElementById('exFilter');
   const cur = sel.value;
