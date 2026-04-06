@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>套利雷达 | CEX 实时价差监控</title>
+<title>Sunny GoGoGo</title>
 <style>
 :root{--bg:#0a0c0f;--bg2:#0f1217;--bg3:#161b22;--bg4:#1e2530;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.12);--text:#e8eaf0;--muted:#5a6478;--muted2:#8892a4;--green:#00d97e;--green-dim:rgba(0,217,126,0.12);--red:#ff4f6d;--red-dim:rgba(255,79,109,0.12);--yellow:#f5b700;--yellow-dim:rgba(245,183,0,0.1);--blue:#3b82f6;--font-mono:'JetBrains Mono',monospace}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -252,7 +252,8 @@ footer{border-top:1px solid var(--border);padding:14px 22px;display:flex;align-i
 <script>
 // ─── Config ───────────────────────────────────────────────────────────────────
 // 从 localStorage 读取已保存的 proxy URL
-let PROXY_BASE = 'https://fancy-mode-6b13.ngohauchin.workers.dev';
+const _cfg = atob('aHR0cHM6Ly9mYW5jeS1tb2RlLTZiMTMubmdvaGF1Y2hpbi53b3JrZXJzLmRldg==');
+let PROXY_BASE = _cfg;
 
 const EX_DEFS = [
   { id:'binance', name:'Binance', color:'#f0b90b',
@@ -276,8 +277,8 @@ const EX_DEFS = [
 const MIN_VOL = 500000, PHEMEX_MIN_VOL = 10000, POLL_MS = 8000;
 const PHEMEX_SKIP = new Set(['SP500','NAS100','GER40','UK100','HK50','AUS200','US2000','NK225','FTSE100','CAC40','SMI','IBEX35','DJI','SENSEX','NIFTY50','SPYX','TW88','EWJ','EWY','HSCHKD','CRCL','AAPL','GOOGL','NVDA','META','AMZN','TSLA','COIN','HOOD','INTC','UNH','MSTR','MSFT','BABA','ORCL','PLTR','XTI','XBR','COPPER','NATGAS','WHEAT','CORN','SOYBEAN','XAU','XAG','XPT','XPD','VIX','MOVE','INX']);
 
-let activeEx = new Set(EX_DEFS.map(e => e.id));
-let pendingEx = new Set(EX_DEFS.map(e => e.id));
+let activeEx = new Set(['binance', 'phemex']);
+let pendingEx = new Set(['binance', 'phemex']);
 let allRows = [], prevSpread = {}, spreadFilter = 0;
 let pollTimer = null;
 const KILO_BASES = new Set();
